@@ -9,13 +9,15 @@
    pip install numpy matplotlib torch torchvision segment-anything-model jupyter-bbox-widget
     
    ```
-   Install segment-anything-model
-    `pip install segment-anything-model`
-
-
-
+  
 2. Download weights for SAM model
 
-`mkdir & cd sam` 
+    ```
+    mkdir & cd sam 
+    wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
+    ```
 
-`wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth`
+3. Run data preparation: 
+    ```
+    python dataprep.py
+    ```
