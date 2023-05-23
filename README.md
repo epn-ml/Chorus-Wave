@@ -1,6 +1,18 @@
-1. To install conda environment
+1. To setup the environment:
 
-`conda create --name <ENV NAME> --file requirements.txt`
+    ``` 
+    conda create --name chorus_wave --file conda_packages.txt
+    conda activate chorus_wave
+    ```
+   Within conda env install the following pip packages:
+    ```
+   pip install numpy matplotlib torch torchvision segment-anything-model jupyter-bbox-widget
+    
+   ```
+   Install segment-anything-model
+    `pip install segment-anything-model`
+
+
 
 2. Download weights for SAM model
 
