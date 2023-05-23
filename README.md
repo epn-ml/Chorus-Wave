@@ -1,6 +1,6 @@
 1. To install conda environment
 
-`conda list -e > requirements.txt`
+`conda create --name <ENV NAME> --file requirements.txt`
 
 2. Download weights for SAM model
 
