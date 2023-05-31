@@ -17,7 +17,7 @@ DIR_OUT = os.path.join(os.getcwd(), 'processed', 'chorus')
 if not os.path.exists(DIR_OUT):
     os.makedirs(DIR_OUT)
 if not os.path.exists(DIR_IN):
-    DIR_IN = input("Please enter input data path:")
+    DIR_IN = input("Please enter input dat a path:")
 
 
 def convert_to_img(filename, dir_in, dir_out):
@@ -44,7 +44,7 @@ def convert_to_img(filename, dir_in, dir_out):
     fig = plt.figure(figsize=(width / 100, height / 100))
 
     # Display the image
-    plt.imshow(img_log)
+    plt.imshow(img_log, origin = 'lower')
     plt.axis('off')  # Turn off the axes
     plt.savefig(out, dpi=dpi, bbox_inches='tight', pad_inches=0.0)
 
