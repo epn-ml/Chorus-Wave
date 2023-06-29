@@ -12,8 +12,8 @@ import matplotlib.pyplot as plt
 
 
 # replace the paths below to match local data dir
-DIR_IN = os.path.join(os.getcwd(), '../chorus_wave/npy_2/chorus')
-DIR_OUT = os.path.join(os.getcwd(), 'processed', 'chorus')
+DIR_IN = os.path.join(os.getcwd(), '../chorus_wave/npy_2/nochorus')
+DIR_OUT = os.path.join(os.getcwd(), 'processed', 'nochorus')
 if not os.path.exists(DIR_OUT):
     os.makedirs(DIR_OUT)
 if not os.path.exists(DIR_IN):

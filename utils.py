@@ -6,12 +6,95 @@ __author__      = "Sahib Julka <sahib.julka@uni-passau.de>"
 __copyright__   = "GPL"
 
 import base64
+from torch.utils.data import DataLoader, Dataset
+from PIL import Image
+import torchvision.transforms as T
+import torchvision.transforms.functional as TF
+import os
 import torch
+import numpy as np
+from tqdm import tqdm
 import numpy as np # linear algebra
+import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
+from skimage.io import imread
 import matplotlib.pyplot as plt
+from skimage.segmentation import mark_boundaries
+from skimage.measure import label, regionprops
 import cv2
+#from skimage.util.montage import montage2d as montage
+montage_rgb = lambda x: np.stack([montage(x[:, :, :, i]) for i in range(x.shape[3])], -1)
+from skimage.morphology import label
+import supervision as sv
+from segment_anything.utils.transforms import ResizeLongestSide
 
 
+
+
+class Dataset(Dataset):
+    def __init__(self, path, transform=True):
+        # Initialize the Dataset class
+        self.transform_flag = transform
+        self.path = path
+        self.images = []
+        self.labels = []
+        self.boxes = []
+        
+        # Iterate over the files in the 'masks' directory
+        for file in os.listdir(os.path.join(self.path, 'masks')):
+            fn = file.split('.npy')[0]
+            
+            # Append paths for images, labels, and boxes
+            self.images.append(os.path.join(self.path, 'chorus', "{}.png".format(fn)))
+            self.labels.append(os.path.join(self.path, 'masks', "{}.npy".format(fn)))
+            #self.boxes.append(os.path.join(self.path, 'boxes', file))
+        
+        # Ensure the number of images is equal to the number of labels
+        assert len(self.images) == len(self.labels)
+        
+    def __encode_image(self, filepath):
+        # Helper function to encode the image
+        img = Image.open(filepath).convert("RGB")
+        return img
+    
+    def __len__(self):
+        # Return the length of the dataset
+        return len(self.labels)
+    
+    def __transform__(self, image, mask):
+        # Apply transformations to the image and mask
+        
+        # Resize the image and mask
+        resize = T.Resize(size=(1024, 1024), interpolation=Image.NEAREST)
+        image = resize(image)
+        mask = resize(mask)
+        
+        # Transform the image to a tensor
+        image = TF.to_tensor(image)
+        # Transform the mask to a tensor
+        # mask = TF.to_tensor(mask)
+        
+        return image, mask
+
+    def __getitem__(self, index):
+        # Retrieve the label and image at the given index
+        label = torch.Tensor(np.load(self.labels[index]))
+        image = self.__encode_image(self.images[index])
+        
+        #boxes = torch.Tensor(np.load(self.boxes[index]))
+        # Reshape boxes 
+        
+        if self.transform_flag == True:
+            # Apply transformations if transform_flag is True
+            img, mask = self.__transform__(image, label)
+        else:
+            # Convert image to tensor without transformations
+            img = TF.to_tensor(image)
+            mask = label
+        mask = mask.clamp(max = 1.0)
+            
+        return {'image': img, 'mask': mask}
+    
+    
 def encode_image(filepath):
     with open(filepath, 'rb') as f:
         image_bytes = f.read()
@@ -65,7 +148,6 @@ def rle_encode(img):
     runs[1::2] -= runs[::2]
     return ' '.join(str(x) for x in runs)
 
-
 def rle_decode(mask_rle, shape=(768, 768)):
     '''
     mask_rle: run-length as string formated (start length)
@@ -101,17 +183,31 @@ def box_to_centroid(bbox):
     centroid = (centroid_x, centroid_y)
     return centroid
 
+def convert_image_to_uint(image):
+    
+    # Convert image to BGR format
+    opencv_image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
-def query_sam(image, boxes = None, points = None):
-    bgr_image = cv2.cvtColor(image.astype(np.uint8), cv2.COLOR_RGB2BGR)
-    image_rgb = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2RGB)
+    # Normalize the image
+    normalized_image = (opencv_image - np.min(opencv_image)) / (np.max(opencv_image) - np.min(opencv_image))
 
-    mask_predictor.set_image(image_rgb)
-    boxes = torch.Tensor(boxes).to(DEVICE)
+    # Convert the normalized image to uint8 format
+    normalized_image_uint = (normalized_image * 255).astype(np.uint8)
+    
+    # Convert image to RGB format
+    image_rgb = cv2.cvtColor(normalized_image_uint, cv2.COLOR_BGR2RGB)
+    
+    return image_rgb
 
-    transformed_boxes = mask_predictor.transform.apply_boxes_torch(boxes, image_rgb.shape[:2])
 
+def query_sam(img_cv, mask_predictor, device, boxes = None, points = None, labels = None):
+    
+    mask_predictor.set_image(img_cv)
     if boxes != None:
+        boxes = torch.Tensor(boxes).to(device)
+
+        transformed_boxes = mask_predictor.transform.apply_boxes_torch(boxes, img_cv.shape[:2])
+
 
         masks, scores, logits = mask_predictor.predict_torch(
             point_coords = None,
@@ -119,17 +215,21 @@ def query_sam(image, boxes = None, points = None):
             boxes=transformed_boxes,
             multimask_output=False
         )
-        return mask, scores
-    if points != None:
-        masks, scores, logits = mask_predictor.predict_torch(
-            point_coords = None,
-            point_labels = points,
-            boxes=None,
-            multimask_output=False
-        )
+        mask = masks.sum(axis = 0)
         return mask, scores
     
+    else:
+        masks, scores, logits = mask_predictor.predict(
+            point_coords = points,
+            point_labels = labels,
+            mask_input=None,
+            multimask_output=False
+        )
+        return masks, scores
+    
+    
 
+    
     
 def query_sam_decoder(bottleneck, boxes,  masks):
     #masks = np.array(boxes)
@@ -162,3 +262,41 @@ def query_sam_decoder(bottleneck, boxes,  masks):
     binary_mask = normalize(threshold(upscaled_masks, 0.0, 0))
 
     return upscaled_masks, binary_mask, scores
+
+
+import math
+
+def calculate_prediction_mask_entropy(prediction_mask):
+    # Convert the prediction mask to integers
+    prediction_mask = np.asarray(prediction_mask, dtype=np.int64)
+
+    # Flatten the prediction mask array
+    flattened_mask = np.ravel(prediction_mask)
+
+    # Count the occurrence of each label in the prediction mask
+    label_counts = np.bincount(flattened_mask)
+
+    # Calculate the total number of labels
+    total_labels = len(flattened_mask)
+
+    # Calculate the probabilities
+    probabilities = label_counts / total_labels
+
+    # Filter out zero probabilities
+    probabilities = probabilities[probabilities > 0]
+
+    # Calculate the entropy
+    entropy = -np.sum(probabilities * np.log2(probabilities))
+
+    return entropy
+
+
+def convert_box(bbox):
+    box = np.array([
+            bbox[1], 
+            bbox[0], 
+            bbox[3], 
+            bbox[2]
+        ])
+       
+    return box

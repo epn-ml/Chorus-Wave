@@ -106,10 +106,11 @@ class Segmentor(pl.LightningModule):
         # with "empty" images (images without target class) a large gap could be observed.
         # Empty images influence a lot on per_image_iou and much less on dataset_iou.
         dataset_iou = smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro")
-
+        dataset_f1 = smp.metrics.f1_score(tp, fp, fn, tn, reduction="micro")
         metrics = {
             f"{stage}_per_image_iou": per_image_iou,
             f"{stage}_dataset_iou": dataset_iou,
+            f"{stage}_f1_score": dataset_f1,
         }
 
         self.log_dict(metrics, prog_bar=True)
