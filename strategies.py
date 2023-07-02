@@ -15,6 +15,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 import tqdm
+from sklearn.neighbors import NearestNeighbors
 
 class Strategy:
     def __init__(self, dataset, net):

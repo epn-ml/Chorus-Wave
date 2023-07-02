@@ -10,206 +10,23 @@ import torch.nn as nn
 import torch
 import pytorch_lightning as pl
 import segmentation_models_pytorch as smp
-
-
-
-# %%
-# adapted from pytorch-segmentation models repo
-class Segmentor(pl.LightningModule):
-    def __init__(self, arch, encoder_name, in_channels, out_classes, **kwargs):
-        """
-        Initializes the Segmentor model.
-
-        Args:
-            arch (str): Architecture name.
-            encoder_name (str): Pre-trained encoder name.
-            in_channels (int): Number of input channels.
-            out_classes (int): Number of output classes.
-            **kwargs: Additional arguments for the model.
-        """
-        super().__init__()
-        self.model = smp.create_model(
-            arch, encoder_name=encoder_name, in_channels=in_channels, classes=out_classes, **kwargs
-        )
-
-        # Preprocessing parameters for image normalization
-        params = smp.encoders.get_preprocessing_params(encoder_name)
-        self.register_buffer("std", torch.tensor(params["std"]).view(1, 3, 1, 1))
-        self.register_buffer("mean", torch.tensor(params["mean"]).view(1, 3, 1, 1))
-
-        # Loss function for image segmentation (Dice Loss)
-        self.loss_fn = smp.losses.DiceLoss(smp.losses.BINARY_MODE, from_logits=True)
-
-    def forward(self, image):
-        """
-        Forward pass of the model.
-
-        Args:
-            image (torch.Tensor): Input image tensor.
-
-        Returns:
-            torch.Tensor: Predicted mask.
-        """
-        # Normalize the image
-        image = (image - self.mean) / self.std
-        mask = self.model(image)
-        return mask
-
-    def shared_step(self, batch, stage):
-        """
-        Shared step for training, validation, and testing.
-
-        Args:
-            batch (dict): Batch of input data.
-            stage (str): Current stage (train, valid, or test).
-
-        Returns:
-            dict: Dictionary containing the loss and evaluation metrics.
-        """
-        image = batch["image"]
-        mask = batch["mask"]
-
-        # Normalize the image
-        image = (image - self.mean) / self.std
-
-        # Perform forward pass
-        logits_mask = self.forward(image)
-
-        # Calculate the loss
-        loss = self.loss_fn(logits_mask, mask)
-
-        # Compute predicted mask and evaluation metrics
-        prob_mask = logits_mask.sigmoid()
-        pred_mask = (prob_mask > 0.5).float()
-        tp, fp, fn, tn = smp.metrics.get_stats(pred_mask.long(), mask.long(), mode="binary")
-
-        return {
-            "loss": loss,
-            "tp": tp,
-            "fp": fp,
-            "fn": fn,
-            "tn": tn,
-        }
-
-    def shared_epoch_end(self, outputs, stage):
-        """
-        Shared epoch end function for training, validation, and testing.
-
-        Args:
-            outputs (list): List of output dictionaries from each step.
-            stage (str): Current stage (train, valid, or test).
-        """
-        # Aggregate step metrics
-        tp = torch.cat([x["tp"] for x in outputs])
-        fp = torch.cat([x["fp"] for x in outputs])
-        fn = torch.cat([x["fn"] for x in outputs])
-        tn = torch.cat([x["tn"] for x in outputs])
-
-        # Compute per image IoU and dataset IoU
-        per_image_iou = smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro-imagewise")
-        dataset_iou = smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro")
-        dataset_f1 = smp.metrics.f1_score(tp, fp, fn, tn, reduction="micro")
-
-        # Log the metrics
-        metrics = {
-            f"{stage}_per_image_iou": per_image_iou,
-            f"{stage}_dataset_iou": dataset_iou,
-            f"{stage}_f1_score": dataset_f1,
-        }
-        self.log_dict(metrics, prog_bar=True)
-
-    def training_step(self, batch, batch_idx):
-        """
-        Training step.
-
-        Args:
-            batch (dict): Batch of input data.
-            batch_idx (int): Index of the current batch.
-
-        Returns:
-            torch.Tensor: Loss value.
-        """
-        output = self.shared_step(batch, "train")
-        self.log("train_loss", output["loss"])
-        return output["loss"]
-
-    def training_epoch_end(self, outputs):
-        """
-        Training epoch end function.
-
-        Args:
-            outputs (list): List of output dictionaries from each step.
-        """
-        self.shared_epoch_end(outputs, "train")
-
-    def validation_step(self, batch, batch_idx):
-        """
-        Validation step.
-
-        Args:
-            batch (dict): Batch of input data.
-            batch_idx (int): Index of the current batch.
-
-        Returns:
-            dict: Dictionary containing the loss and evaluation metrics.
-        """
-        return self.shared_step(batch, "valid")
-
-    def validation_epoch_end(self, outputs):
-        """
-        Validation epoch end function.
-
-        Args:
-            outputs (list): List of output dictionaries from each step.
-        """
-        self.shared_epoch_end(outputs, "valid")
-
-    def test_step(self, batch, batch_idx):
-        """
-        Test step.
-
-        Args:
-            batch (dict): Batch of input data.
-            batch_idx (int): Index of the current batch.
-
-        Returns:
-            dict: Dictionary containing the loss and evaluation metrics.
-        """
-        return self.shared_step(batch, "test")
-
-    def test_epoch_end(self, outputs):
-        """
-        Test epoch end function.
-
-        Args:
-            outputs (list): List of output dictionaries from each step.
-        """
-        self.shared_epoch_end(outputs, "test")
-
-    def configure_optimizers(self):
-        """
-        Configure the optimizer.
-
-        Returns:
-            torch.optim.Optimizer: Optimizer for training the model.
-        """
-        return torch.optim.Adam(self.parameters(), lr=0.0001)
+import torch.optim as optim
+import torch.nn.functional as F
+from torch.utils.data import DataLoader
+import tqdm
 
 
 
 
-
-
-    
 class Net:
     def __init__(self, net, params, device):
         """
-        Wrapper class for the neural network model.
+        Initializes the Net class.
 
         Args:
-            net: Neural network model.
-            params (dict): Parameters for training and testing.
-            device: Device to use for training and testing.
+            net: The neural network model.
+            params: Dictionary of parameters.
+            device: Device to run the model on.
         """
         self.net = net
         self.params = params
@@ -218,13 +35,10 @@ class Net:
 
     def train(self, data):
         """
-        Train the neural network model.
+        Trains the neural network model.
 
         Args:
-            data: Training data.
-
-        Returns:
-            None
+            data: The training dataset.
         """
         n_epoch = self.params['n_epoch']
         self.clf = self.net.to(self.device)
@@ -232,7 +46,7 @@ class Net:
         optimizer = optim.SGD(self.clf.parameters(), **self.params['optimizer_args'])
 
         loader = DataLoader(data, shuffle=True, **self.params['train_args'])
-        for epoch in tqdm.tqdm(range(1, n_epoch+1), ncols=100):
+        for epoch in tqdm.tqdm(range(1, n_epoch + 1), ncols=100):
             for batch_idx, (x, y, idxs) in enumerate(loader):
                 x, y = x.to(self.device), y.to(self.device)
                 optimizer.zero_grad()
@@ -243,16 +57,17 @@ class Net:
 
     def predict(self, data):
         """
-        Make predictions using the trained model.
+        Generates predictions using the trained model.
 
         Args:
-            data: Test data.
+            data: The input dataset for prediction.
 
         Returns:
-            tuple: Predicted masks and ground truth masks.
+            preds: Predicted masks.
+            masks: Ground truth masks.
         """
         self.clf.eval()
-        preds = torch.zeros(len(data), 640 , 1920)
+        preds = torch.zeros(len(data), 640, 1920)
         masks = torch.zeros(len(data), 640, 1920)
         loader = DataLoader(data, shuffle=False, **self.params['test_args'])
         with torch.no_grad():
@@ -265,13 +80,13 @@ class Net:
 
     def predict_prob(self, data):
         """
-        Make probability predictions using the trained model.
+        Generates probability predictions using the trained model.
 
         Args:
-            data: Test data.
+            data: The input dataset for prediction.
 
         Returns:
-            torch.Tensor: Predicted probabilities.
+            probs: Predicted probabilities.
         """
         self.clf.eval()
         probs = torch.zeros(len(data), 640, 1920)
@@ -286,20 +101,195 @@ class Net:
 
     def predict_prob_dropout(self, data, n_drop=10):
         """
-        Make probability predictions with dropout using the trained model.
+        Generates probability predictions using dropout with the trained model.
 
         Args:
-            data: Test data.
-            n_drop (int): Number of dropout samples.
+            data: The input dataset for prediction.
+            n_drop: Number of dropout iterations.
 
         Returns:
-            torch.Tensor: Predicted probabilities with dropout.
+            probs: Predicted probabilities.
         """
         self.clf.train()
         probs = torch.zeros([len(data), 640 * 1920])
         loader = DataLoader(data, shuffle=False, **self.params['test_args'])
         for i in range(n_drop):
             with torch.no_grad():
+                for x, y, idxs in loader:
+                    x, y = x.to(self.device), y.to(self.device)
+                    out = self.clf(x)
+                    prob = F.sigmoid(out).view(1, -1)
+                    probs[idxs] += prob.cpu()
+        probs /= n_drop
+        return probs
+
+    def predict_prob_dropout_split(self, data, n_drop=10):
+        """
+        Generates probability predictions using dropout with the trained model.
+
+        Args:
+            data: The input dataset for prediction.
+            n_drop: Number of dropout iterations.
+
+        Returns:
+            probs: Predicted probabilities.
+        """
+        self.clf.train()
+        probs = torch.zeros([n_drop, len(data)])
+        loader = DataLoader(data, shuffle=False, **self.params['test_args'])
+        for i in range(n_drop):
+            with torch.no_grad():
+                for x, y, idxs in loader:
+                    x, y = x.to(self.device), y.to(self.device)
+                    out = self.clf(x)
+                    prob = F.sigmoid(out).view(-1)
+                    probs[i][idxs] += prob.cpu()
+        return probs
+
+    def get_embeddings(self, data):
+        """
+        Retrieves embeddings from the trained model.
+
+        Args:
+            data: The input dataset.
+
+        Returns:
+            embeddings: Extracted embeddings.
+        """
+        self.clf.eval()
+        embeddings = torch.zeros([len(data), 512 * 20 * 60])
+        loader = DataLoader(data, shuffle=False, **self.params['test_args'])
+        with torch.no_grad():
+            for x, y, idxs in loader:
+                x, y = x.to(self.device), y.to(self.device)
+                out = self.clf.encoder(x)[5]
+                embeddings[idxs] = out.view(-1).cpu()
+        return embeddings
+
+
+class Segmentor(pl.LightningModule):
+
+    def __init__(self, arch, encoder_name, in_channels, out_classes, **kwargs):
+        super().__init__()
+        self.model = smp.create_model(
+            arch, encoder_name=encoder_name, in_channels=in_channels, classes=out_classes, **kwargs
+        )
+
+        # preprocessing parameteres for image
+        params = smp.encoders.get_preprocessing_params(encoder_name)
+        self.register_buffer("std", torch.tensor(params["std"]).view(1, 3, 1, 1))
+        self.register_buffer("mean", torch.tensor(params["mean"]).view(1, 3, 1, 1))
+
+        # for image segmentation dice loss could be the best first choice
+        self.loss_fn = smp.losses.DiceLoss(smp.losses.BINARY_MODE, from_logits=True)
+
+    def forward(self, image):
+        # normalize image here
+        image = (image - self.mean) / self.std
+        mask = self.model(image)
+        return mask
+
+    def shared_step(self, batch, stage):
+        image = batch["image"]
+
+        # Shape of the image should be (batch_size, num_channels, height, width)
+        # if you work with grayscale images, expand channels dim to have [batch_size, 1, height, width]
+        assert image.ndim == 4
+
+        # Check that image dimensions are divisible by 32,
+        # encoder and decoder connected by `skip connections` and usually encoder have 5 stages of
+        # downsampling by factor 2 (2 ^ 5 = 32); e.g. if we have image with shape 65x65 we will have
+        # following shapes of features in encoder and decoder: 84, 42, 21, 10, 5 -> 5, 10, 20, 40, 80
+        # and we will get an error trying to concat these features
+        h, w = image.shape[2:]
+        assert h % 32 == 0 and w % 32 == 0
+
+        mask = batch["mask"]
+
+        # Shape of the mask should be [batch_size, num_classes, height, width]
+        # for binary segmentation num_classes = 1
+        assert mask.ndim == 4
+
+        # Check that mask values in between 0 and 1, NOT 0 and 255 for binary segmentation
+
+        assert mask.max() <= 1.0 and mask.min() >= 0
+
+        logits_mask = self.forward(image)
+
+        # Predicted mask contains logits, and loss_fn param `from_logits` is set to True
+        loss = self.loss_fn(logits_mask, mask)
+
+        # Lets compute metrics for some threshold
+        # first convert mask values to probabilities, then
+        # apply thresholding
+        prob_mask = logits_mask.sigmoid()
+        pred_mask = (prob_mask > 0.5).float()
+
+        # We will compute IoU metric by two ways
+        #   1. dataset-wise
+        #   2. image-wise
+        # but for now we just compute true positive, false positive, false negative and
+        # true negative 'pixels' for each image and class
+        # these values will be aggregated in the end of an epoch
+        tp, fp, fn, tn = smp.metrics.get_stats(pred_mask.long(), mask.long(), mode="binary")
+
+        return {
+            "loss": loss,
+            "tp": tp,
+            "fp": fp,
+            "fn": fn,
+            "tn": tn,
+        }
+
+    def shared_epoch_end(self, outputs, stage):
+        # aggregate step metics
+        tp = torch.cat([x["tp"] for x in outputs])
+        fp = torch.cat([x["fp"] for x in outputs])
+        fn = torch.cat([x["fn"] for x in outputs])
+        tn = torch.cat([x["tn"] for x in outputs])
+
+        # per image IoU means that we first calculate IoU score for each image
+        # and then compute mean over these scores
+        per_image_iou = smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro-imagewise")
+
+        # dataset IoU means that we aggregate intersection and union over whole dataset
+        # and then compute IoU score. The difference between dataset_iou and per_image_iou scores
+        # in this particular case will not be much, however for dataset
+        # with "empty" images (images without target class) a large gap could be observed.
+        # Empty images influence a lot on per_image_iou and much less on dataset_iou.
+        dataset_iou = smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro")
+        dataset_f1 = smp.metrics.f1_score(tp, fp, fn, tn, reduction="micro")
+        metrics = {
+            f"{stage}_per_image_iou": per_image_iou,
+            f"{stage}_dataset_iou": dataset_iou,
+            f"{stage}_f1_score": dataset_f1,
+        }
+
+        self.log_dict(metrics, prog_bar=True)
+
+    def training_step(self, batch, batch_idx):
+        return self.shared_step(batch, "train")
+
+    def training_epoch_end(self, outputs):
+        return self.shared_epoch_end(outputs, "train")
+
+    def validation_step(self, batch, batch_idx):
+        return self.shared_step(batch, "valid")
+
+    def validation_epoch_end(self, outputs):
+        return self.shared_epoch_end(outputs, "valid")
+
+    def test_step(self, batch, batch_idx):
+        return self.shared_step(batch, "test")
+
+    def test_epoch_end(self, outputs):
+        return self.shared_epoch_end(outputs, "test")
+
+    def configure_optimizers(self):
+        return torch.optim.Adam(self.parameters(), lr=0.0001)
+
+
+
 
 
 

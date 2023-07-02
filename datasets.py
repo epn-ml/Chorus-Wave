@@ -13,9 +13,9 @@ import torchvision.transforms.functional as TF
 import os
 import torch
 import numpy as np # linear algebra
+import segmentation_models_pytorch as smp
 
-
-class Dataset(Dataset):
+class Chorus_dataset(Dataset):
     def __init__(self, path, split = "train", init = True, transform=True, use_sam = False):
         # Initialize the Dataset class
     
@@ -262,5 +262,8 @@ class Data:
 
         # Calculate IoU and F1-score
         iou = smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro")
-        f1 = smp.metrics.f
+        f1 = smp.metrics.f1_score(tp, fp, fn, tn, reduction="micro")
+
+        return iou, f1
+
 
