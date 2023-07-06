@@ -7,7 +7,7 @@ Citation TBD
 1. To setup the environment:
 
    ```
-    conda create --name chorus_wave --file conda_packages.txt
+    conda create --name chorus_wave --file conda_packages.txt &&
     conda activate chorus_wave
    ```
    Within conda env install the following pip packages:
@@ -22,7 +22,7 @@ Citation TBD
     
 3. Download the data and unzip the files in the `data` folder
    ```
-   wget -P data/ http://babeta.ufa.cas.cz/dpisa/down/europlanet/chorus_part1.zip
+   wget -P data/ http://babeta.ufa.cas.cz/dpisa/down/europlanet/chorus_part1.zip &&
    wget -P data/ http://babeta.ufa.cas.cz/dpisa/down/europlanet/chorus_part2.zip
    ```
    
