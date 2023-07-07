@@ -12,7 +12,7 @@ Citation TBD
    ```
    Within conda env install the following pip packages:
    ```
-   pip install numpy matplotlib torch torchvision segment-anything-model jupyter-bbox-widget
+   pip install pip_requirements.txt
    ```
   
 2. Download weights for SAM model
