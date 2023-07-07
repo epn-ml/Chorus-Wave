@@ -56,9 +56,14 @@ Citation TBD
 ├── codemeta.json                                     # code metadata
 ├── conda_packages.txt                                # required conda packages
 ├── dataprep.py                                       # Python script to convert spectrograms to images and save them for use throughout
+├── LICENSE.txt                                       # the full license which this project employs
 ├── metadata.yml                                      # project metadata
 ├── pip_requirements.txt                              # required pip packages
 ├── README.md                                         # this README file :)
-├── LICENSE.txt                                       # the full license which this project employs
 
 ```
+### Acknowledgement
+
+<img src="logo.jpg" align="left" width="200px"/>Europlanet 2024 RI has received funding from the European Union’s Horizon 2020 research and innovation programme under grant agreement No 871149.
+
+<br clear="left"/>
