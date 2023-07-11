@@ -43,10 +43,10 @@ Citation TBD
 │   │   │   └── (train)                               # Train partition
 │   │   │   └── (test)                                # Test partition
 ├── (notebooks)                                       # jupyter notebooks for various experiments
-│   ├── 01-Annotation.ipyn                            # notebooks for verifying assumptions about the data
-│   ├── 02-Modelling-baseline-random_sampling.ipynb   # notebooks helpful for analyzing models
-│   ├── 03-Modelling-SAM-distillation.ipynb           # notebooks helpful for analyzing models
-│   ├── 02-Modelling-Active-Learning.ipynb            # notebooks helpful for analyzing models
+│   ├── 01-Annotation.ipyn                            # Annotate the images using SAM box prompt
+│   ├── 02-Modelling-baseline-random_sampling.ipynb   # Baseline experiments with data sampled randomly
+│   ├── 03-Modelling-SAM-distillation.ipynb           # Fine tuning SAM via training domain-specific decoder
+│   ├── 02-Modelling-Active-Learning.ipynb            # Active Learning experiments with various acquisition functions
 ├── (sam)                                             # To contain the downloaded SAM weights
 ├── (src)                                             # the main source code directory
 │   ├── datasets.py                                   # custom dataset classes and wrappers
@@ -59,7 +59,7 @@ Citation TBD
 ├── LICENSE.txt                                       # the full license which this project employs
 ├── metadata.yml                                      # project metadata
 ├── pip_requirements.txt                              # required pip packages
-├── README.md                                         # this README file :)
+├── README.md                                         # this README file
 
 ```
 ### Acknowledgement
