@@ -20,17 +20,19 @@ Citation TBD
     wget -P sam https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
     ```
     
-3. Download the data and unzip the files in the `data` folder
+3. Download the data and unzip the files in the `data` folder (For access to the full dataset. For the demo skip steps 3 and 4, and jump straight to step 5.)
    ```
    wget -P data/ http://babeta.ufa.cas.cz/dpisa/down/europlanet/chorus_part1.zip &&
    wget -P data/ http://babeta.ufa.cas.cz/dpisa/down/europlanet/chorus_part2.zip
    ```
    
-5. Run data preparation: 
+4. Run data preparation: 
     ```
     python dataprep.py
     ```
-6. Experiment notebooks are contained in `notebooks`
+5. To download the data for demo: `git lfs pull`
+   
+6. Run the experiments in Jupyter notebooks under `notebooks`
 
 ### Project Structure
 ```
